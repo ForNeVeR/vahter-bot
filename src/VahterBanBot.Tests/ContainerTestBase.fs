@@ -12,6 +12,7 @@ open DotNet.Testcontainers.Containers
 open Funogram.Telegram.Types
 open Npgsql
 open Testcontainers.PostgreSql
+open VahterBanBot.Tests.Logging
 open VahterBanBot.Tests.TgMessageUtils
 open VahterBanBot.Types
 open VahterBanBot.Utils
@@ -30,6 +31,7 @@ type VahterTestContainers() =
     let mutable publicConnectionString: string = null
     
     // base image for the app, we'll build exactly how we build it in Azure
+    let buildLogger = StringLogger()
     let image =
         ImageFromDockerfileBuilder()
             .WithDockerfileDirectory(solutionDir, String.Empty)
@@ -39,6 +41,7 @@ type VahterTestContainers() =
             .WithBuildArgument("RESOURCE_REAPER_SESSION_ID", ResourceReaper.DefaultSessionId.ToString("D"))
             // it might speed up the process to not clean up the base image
             .WithCleanUp(false)
+            .WithLogger(buildLogger)
             .Build()
 
     // private network for the containers
@@ -123,6 +126,8 @@ type VahterTestContainers() =
 
                 // wait for both to finish
                 do! imageTask
+                let messages = buildLogger.Messages // always empty, wtf?
+                
                 do! dbTask
                 publicConnectionString <- $"Server=127.0.0.1;Database=vahter_bot_ban;Port={dbContainer.GetMappedPublicPort(5432)};User Id=vahter_bot_ban_service;Password=vahter_bot_ban_service;Include Error Detail=true;Minimum Pool Size=1;Maximum Pool Size=20;Max Auto Prepare=100;Auto Prepare Min Usages=1;Trust Server Certificate=true;"
                 
@@ -158,7 +163,7 @@ type VahterTestContainers() =
                 httpClient.BaseAddress <- uri
                 httpClient.DefaultRequestHeaders.Add("X-Telegram-Bot-Api-Secret-Token", "OUR_SECRET")
             finally
-                let struct (_, err) = appContainer.GetLogsAsync().Result
+                let struct (_stdout, err) = appContainer.GetLogsAsync().Result
                 if err <> "" then
                     failwith err
         }
